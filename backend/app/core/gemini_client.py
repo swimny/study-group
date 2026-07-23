@@ -2,7 +2,7 @@ from google import genai
 
 _client: genai.Client | None = None
 
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-3.5-flash"
 
 
 def _get_client() -> genai.Client:
