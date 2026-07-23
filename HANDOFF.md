@@ -114,7 +114,8 @@
    - 백엔드에 주간 리포트 조회 라우터 추가 (최신 리포트 가져오기)
    - 프론트 `app/(app)/feed/page.tsx`에 주간 리포트를 맨 위 고정 컴포넌트로 얹기 (일반 `feed_posts`랑 다른 스타일)
 2. **AI 코칭 캐릭터 2단계** (function calling — 대화로 실제 Todo 추가 등 액션 실행) — 1단계(대화만)는 완성됨. 2단계는 나중에, `C:\Users\rlatn\Desktop\pusan-clone`(카카오테크캠퍼스 과제 레포)의 tool 정의 방식 참고.
-3. 남은 폴리시/인프라 작업들: 캘린더-Todo 연동(`show_as_todo` 실제 사용, 지금은 설계만 있고 미구현), 에러 표시 일관성 개선(네트워크/인증 실패 시 화면에 에러 안 뜨는 곳들 — Todo/캘린더 화면 등 대부분의 화면에 아직 없음, `error.tsx`/`loading.tsx` 라우트 파일도 전무), Alembic 마이그레이션 전환, Docker Compose/배포, `users.current_streak`/`longest_streak` 캐시 컬럼 정리(대시보드가 이미 실시간 계산 방식으로 바뀌어서 이 컬럼들이 지금 안 쓰임 — 없애거나 반대로 이 계산 결과로 채워 넣거나 결정 필요).
+3. **⚠️ 프로필 삭제 로직이 최신 테이블들을 안 지움 (2026-07-23 발견, 아직 안 고침).** `auth.py`의 `delete_profile`이 DB cascade가 아니라 코드로 직접 관련 행을 지우는 방식인데, `calendar_events`/`calendar_event_participants`/`todos`/`todo_categories`만 정리하고 그 이후 추가된 `prep_items`(+checklist/resources), `portfolio_profiles`(+links/items), `feed_posts`(+comments/reactions), `weekly_goals`, `coaching_messages`는 전혀 안 지움. SQLite가 외래키 제약을 강제 안 해서(`PRAGMA foreign_keys` 설정 없음) 삭제 자체는 에러 없이 되지만, 삭제된 유저를 가리키는 고아 행이 남음. **특히 `feed.py`의 `_load_posts`가 `users_by_id[post.author_id]`로 작성자를 찾는데, 그 유저가 삭제된 상태면 KeyError로 소식 화면 전체가 깨질 수 있음(글쓴이 본인만이 아니라 모두).** 프로필 삭제 기능 실제로 쓰기 전에 고쳐야 함 — `delete_profile`에 나머지 테이블 정리 로직 추가.
+4. 남은 폴리시/인프라 작업들: 캘린더-Todo 연동(`show_as_todo` 실제 사용, 지금은 설계만 있고 미구현), 에러 표시 일관성 개선(네트워크/인증 실패 시 화면에 에러 안 뜨는 곳들 — Todo/캘린더 화면 등 대부분의 화면에 아직 없음, `error.tsx`/`loading.tsx` 라우트 파일도 전무), Alembic 마이그레이션 전환, Docker Compose/배포, `users.current_streak`/`longest_streak` 캐시 컬럼 정리(대시보드가 이미 실시간 계산 방식으로 바뀌어서 이 컬럼들이 지금 안 쓰임 — 없애거나 반대로 이 계산 결과로 채워 넣거나 결정 필요).
 
 ## 진행 방식 요청
 새 세션에서도 위 "협업 방식"을 유지해줘 — 주간 리포트 크론 스크립트부터 **`feature/weekly-report` 브랜치 만드는 것부터 시작**해서 "제안 → 검토 → 확정 → 코드" 순서로, 하나씩 끊어서 진행하면 됨.
