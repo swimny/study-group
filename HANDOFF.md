@@ -68,6 +68,11 @@
 3. **프론트 API 호출 주소는 `http://localhost:8000`, `127.0.0.1:8000` 쓰면 안 됨** — SameSite=Lax 쿠키가 `localhost`와 `127.0.0.1`을 다른 사이트로 취급해서 인증이 깨짐.
 4. 백엔드 검증은 실제 로그인 없이도, `.env.local`의 `JWT_SECRET_KEY`로 `create_session_token(user_id, 0)`을 직접 호출해서 테스트용 세션 쿠키를 만들어 curl로 검증 가능(비밀번호 몰라도 됨). 여러 번 이렇게 검증했음.
 5. **모든 생성/수정 폼에 에러가 화면에 안 보이는 문제가 반복적으로 있었음.** 몇 군데는 에러 메시지 붙였지만(카테고리/할일 추가 등의 유효성 검사 에러), **네트워크/인증 실패 시 에러를 보여주는 처리는 아직 전체적으로 안 되어 있음.** 다음에 손대면 좋을 부분.
+6. **새 라우터를 추가했는데 서버 재시작해도 `/openapi.json`/`/docs`에 안 뜨는 문제 (2026-07-23, Windows).** 원인: 예전에 켜뒀던 uvicorn 프로세스가 안 죽고 8000번 포트를 계속 잡고 있어서, 새로 켠 서버는 실제로 요청을 못 받고 옛날 프로세스가 계속 응답하고 있었음. `netstat -ano | findstr :8000`으로 포트 잡은 PID 확인했는데, 터미널에 뜬 `Started server process [PID]`랑 실제로 포트 잡은 PID가 서로 달랐던 게 결정적 단서. 게다가 `Get-Process -Id`로 확인하면 이미 죽은 PID인데도 `netstat`엔 한동안 남아있어서 더 헷갈렸음. **해결:** `Stop-Process -Name python -Force -ErrorAction SilentlyContinue`로 python 프로세스를 통째로 다 죽이고, `Get-Process -Name python`으로 완전히 없어졌는지 확인한 뒤 uvicorn을 다시 하나만 켜니 해결됨. **교훈:** 라우터 추가 후 반영이 안 되는 것 같으면 `--reload`를 믿지 말고, python 프로세스를 전부 죽였다가 하나만 새로 켜서 확인할 것.
+7. **PowerShell `Invoke-RestMethod -Headers @{Cookie=...}`로 세션 쿠키 인증 테스트가 안 됨 ("로그인이 필요합니다" 401).** `Invoke-RestMethod`가 `-Headers`에 넘긴 `Cookie` 값을 실제로 안 실어 보내는 문제. **해결:** `New-Object Microsoft.PowerShell.Commands.WebRequestSession`으로 세션 객체를 만들고 `System.Net.Cookie`를 등록한 뒤 `-WebSession`으로 넘기면 정상 동작.
+8. **Gemini API 모델명 `gemini-2.5-flash`가 404 에러.** 응답: `"This model models/gemini-2.5-flash is no longer available to new users."` — 신규 발급 키에는 막힌 구모델이었음. **해결:** `gemini-3.5-flash`로 교체.
+9. **PowerShell에서 `python -c "..."`에 큰따옴표/작은따옴표를 섞어 넣으면 인자가 깨짐 (`SyntaxError: unterminated string literal` 등).** Windows PowerShell이 네이티브 exe(`python.exe`)로 인자를 넘길 때 따옴표 escape가 기대한 대로 안 됨(여러 조합 다 시도했지만 계속 깨짐). **해결:** inline `-c` 대신 `.py` 스크립트 파일을 만들어서 `python scripts\파일명.py`로 실행. **교훈:** PowerShell + `python -c` + 따옴표 중첩 조합은 애초에 시도하지 말고 바로 스크립트 파일로 갈 것.
+10. **오늘 할일이 0개일 때 코칭 캐릭터가 "이미 다 완료했어요!"라고 말하는 버그.** 프롬프트에 "오늘 할일 0/0개 완료"라는 문구를 그대로 넣었더니 Gemini가 0/0을 100% 완료로 해석해서 생김. **해결:** `coaching.py`의 `_build_context_summary`에서 할일이 0개인 경우를 따로 분기해서 "오늘 등록된 할일이 아직 없음"으로 명시.
 
 ## 협업 방식 (지켜온 규칙)
 - 사용자는 데이터사이언스 전공, AI/백엔드 학습 중. **혼자 설계하고 코드를 던지지 말고, 제안 → 사용자 검토/결정 → 그 다음에 코드 작성** 순서로 진행해왔음.

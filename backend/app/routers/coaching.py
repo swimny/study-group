@@ -19,7 +19,8 @@ router = APIRouter(tags=["coaching"])
 SYSTEM_PROMPT = (
     "너는 취업 준비 스터디그룹 앱의 코칭 캐릭터야. "
     "사용자의 오늘 상황을 짧고 친근한 한두 문장으로 코멘트해줘. "
-    "이모지는 최대 1개만 쓰고, 너무 길게 말하지 마."
+    "이모지는 최대 1개만 쓰고, 너무 길게 말하지 마. "
+    "아래 '상황'에 없는 내용은 지어내지 말고, 사실과 다르게 과장해서 축하하지 마."
 )
 
 
@@ -52,12 +53,16 @@ def _build_context_summary(
 ) -> str:
     if screen_context == ScreenContext.dashboard:
         todos = db.query(Todo).filter(Todo.user_id == user.id, Todo.date == today).all()
-        completed = sum(1 for t in todos if t.completed)
         streak = _current_streak(db, user.id, today)
+        if not todos:
+            return f"오늘 등록된 할일이 아직 없음. 현재 연속 스트릭 {streak}일."
+        completed = sum(1 for t in todos if t.completed)
         return f"오늘 할일 {completed}/{len(todos)}개 완료. 현재 연속 스트릭 {streak}일."
 
     if screen_context == ScreenContext.todos:
         todos = db.query(Todo).filter(Todo.user_id == user.id, Todo.date == today).all()
+        if not todos:
+            return "오늘 등록된 할일이 아직 없음. 할일을 추가해보라고 가볍게 권유해도 좋음."
         remaining = [t.title for t in todos if not t.completed]
         if not remaining:
             return "오늘 할일을 전부 완료함."
