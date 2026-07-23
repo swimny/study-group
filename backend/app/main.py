@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import Base, engine
 from app.routers.auth import router as auth_router
 from app.routers.calendar import router as calendar_router
+from app.routers.coaching import router as coaching_router
 from app.routers.dashboard import router as dashboard_router
 from app.routers.feed import router as feed_router
 from app.routers.portfolio import router as portfolio_router
@@ -33,3 +34,4 @@ app.include_router(portfolio_router)
 app.include_router(feed_router)
 app.include_router(weekly_goals_router)
 app.include_router(dashboard_router)
+app.include_router(coaching_router)
