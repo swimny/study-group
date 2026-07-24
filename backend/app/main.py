@@ -12,6 +12,7 @@ from app.routers.prep_notes import router as prep_notes_router
 from app.routers.todos import router as todos_router
 from app.routers.users import router as users_router
 from app.routers.weekly_goals import router as weekly_goals_router
+from app.routers.weekly_report import router as weekly_report_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -35,3 +36,4 @@ app.include_router(feed_router)
 app.include_router(weekly_goals_router)
 app.include_router(dashboard_router)
 app.include_router(coaching_router)
+app.include_router(weekly_report_router)
