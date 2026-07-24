@@ -14,9 +14,22 @@ from app.core.security import (
 from app.database import get_db
 from app.models.calendar_event import CalendarEvent
 from app.models.calendar_event_participant import CalendarEventParticipant
+from app.models.coaching_message import CoachingMessage
+from app.models.feed_comment import FeedComment
+from app.models.feed_post import FeedPost
+from app.models.feed_reaction import FeedReaction
+from app.models.portfolio_item import PortfolioItem
+from app.models.portfolio_link import PortfolioLink
+from app.models.portfolio_profile import PortfolioProfile
+from app.models.portfolio_profile_link import PortfolioProfileLink
+from app.models.prep_checklist_item import PrepChecklistItem
+from app.models.prep_item import PrepItem
+from app.models.prep_resource import PrepResource
 from app.models.todo import Todo
 from app.models.todo_category import TodoCategory
 from app.models.user import User
+from app.models.weekly_goal import WeeklyGoal
+from app.models.weekly_report_member_summary import WeeklyReportMemberSummary
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -148,6 +161,9 @@ class ProfileDeleteRequest(BaseModel):
 
 @router.delete("/profiles/{user_id}", dependencies=[Depends(require_gate)])
 def delete_profile(user_id: int, body: ProfileDeleteRequest, db: Session = Depends(get_db)):
+    # DB에 ON DELETE CASCADE도, SQLAlchemy relationship cascade도 안 씀(FeedPost의
+    # comments/reactions 속성을 feed.py에서 수동으로 덮어써서 relationship cascade와 충돌 위험 있음).
+    # user_id/author_id로 유저를 참조하는 테이블이 새로 생기면 여기에도 삭제 코드를 추가할 것.
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         raise HTTPException(status_code=404, detail="존재하지 않는 프로필입니다")
@@ -171,6 +187,70 @@ def delete_profile(user_id: int, body: ProfileDeleteRequest, db: Session = Depen
     ).delete(synchronize_session=False)
     db.query(Todo).filter(Todo.user_id == user_id).delete(synchronize_session=False)
     db.query(TodoCategory).filter(TodoCategory.user_id == user_id).delete(synchronize_session=False)
+
+    owned_prep_item_ids = [
+        prep_item_id
+        for (prep_item_id,) in db.query(PrepItem.id).filter(PrepItem.user_id == user_id).all()
+    ]
+    if owned_prep_item_ids:
+        db.query(PrepChecklistItem).filter(
+            PrepChecklistItem.prep_item_id.in_(owned_prep_item_ids)
+        ).delete(synchronize_session=False)
+        db.query(PrepResource).filter(
+            PrepResource.prep_item_id.in_(owned_prep_item_ids)
+        ).delete(synchronize_session=False)
+
+    owned_portfolio_item_ids = [
+        item_id
+        for (item_id,) in db.query(PortfolioItem.id).filter(PortfolioItem.user_id == user_id).all()
+    ]
+    if owned_portfolio_item_ids:
+        db.query(PortfolioLink).filter(
+            PortfolioLink.portfolio_item_id.in_(owned_portfolio_item_ids)
+        ).delete(synchronize_session=False)
+        db.query(PortfolioItem).filter(PortfolioItem.user_id == user_id).delete(
+            synchronize_session=False
+        )
+
+    db.query(PrepItem).filter(PrepItem.user_id == user_id).delete(synchronize_session=False)
+
+    owned_portfolio_profile_ids = [
+        profile_id
+        for (profile_id,) in db.query(PortfolioProfile.id)
+        .filter(PortfolioProfile.user_id == user_id)
+        .all()
+    ]
+    if owned_portfolio_profile_ids:
+        db.query(PortfolioProfileLink).filter(
+            PortfolioProfileLink.portfolio_profile_id.in_(owned_portfolio_profile_ids)
+        ).delete(synchronize_session=False)
+        db.query(PortfolioProfile).filter(PortfolioProfile.user_id == user_id).delete(
+            synchronize_session=False
+        )
+
+    owned_post_ids = [
+        post_id for (post_id,) in db.query(FeedPost.id).filter(FeedPost.author_id == user_id).all()
+    ]
+    if owned_post_ids:
+        db.query(FeedComment).filter(FeedComment.post_id.in_(owned_post_ids)).delete(
+            synchronize_session=False
+        )
+        db.query(FeedReaction).filter(FeedReaction.post_id.in_(owned_post_ids)).delete(
+            synchronize_session=False
+        )
+        db.query(FeedPost).filter(FeedPost.id.in_(owned_post_ids)).delete(synchronize_session=False)
+
+    db.query(FeedComment).filter(FeedComment.author_id == user_id).delete(synchronize_session=False)
+    db.query(FeedReaction).filter(FeedReaction.user_id == user_id).delete(synchronize_session=False)
+
+    db.query(WeeklyGoal).filter(WeeklyGoal.user_id == user_id).delete(synchronize_session=False)
+    db.query(CoachingMessage).filter(CoachingMessage.user_id == user_id).delete(
+        synchronize_session=False
+    )
+    db.query(WeeklyReportMemberSummary).filter(
+        WeeklyReportMemberSummary.user_id == user_id
+    ).delete(synchronize_session=False)
+
     db.delete(user)
     db.commit()
     return {"message": "deleted"}
