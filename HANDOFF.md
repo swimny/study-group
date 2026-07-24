@@ -37,7 +37,7 @@
 - `feed_reactions`: id, post_id FK, user_id FK, emoji — UNIQUE(post_id, user_id, emoji)
 - `weekly_goals`: id, user_id FK, week_start_date, title, completed, created_at
 - **`coaching_messages`** (AI 코칭 캐릭터, 2026-07-23 추가): id, user_id FK, screen_context(enum: dashboard/todos/calendar/prep_notes), role(enum: assistant/user), content, date, created_at
-- **`weekly_reports`** (AI 주간 리포트, 아직 라우터/생성 로직은 미구현, 모델만 있음): id, week_start_date(UNIQUE), team_summary, created_at
+- **`weekly_reports`** (AI 주간 리포트, 2026-07-24 생성 로직/라우터/자동화까지 완성): id, week_start_date(UNIQUE), team_summary, created_at
 - **`weekly_report_member_summaries`**: id, weekly_report_id FK, user_id FK, summary
 
 **아직 설계 안 한 테이블**: `daily_activity`, `agent_runs`/`agent_messages`(필요하면)
@@ -49,7 +49,12 @@
   - 화면(대시보드/Todo/캘린더/준비노트)에 처음 들어갈 때 그날 그 화면용 메시지가 없으면 Gemini 호출해서 새로 만들고(하루 1번), 있으면 재사용 — `backend/app/routers/coaching.py`의 `GET /coaching-messages`.
   - 사용자가 캐릭터한테 말 걸면 `POST /coaching-messages`로 대화 이어감(자유, 횟수 제한 없음). **지금은 진짜 대화만 하고, 실제로 Todo 추가 같은 액션 실행은 안 함 — 2단계로 명시적으로 미뤄둔 것.**
   - 프롬프트/상황요약 로직은 `coaching.py`의 `SYSTEM_PROMPT` + `_build_context_summary()`에 있음 (agent-worker 아님 — 코칭 캐릭터는 화면 열 때 즉석 생성이라 상시 프로세스 필요 없음).
-- **주간 리포트 — 모델만 있고 라우터/생성 스크립트는 미구현.** 매주 일요일 밤 자동 생성 예정(스케줄/크론), `agent-worker` 폴더가 이 역할 담당할 예정.
+- **주간 리포트 (2026-07-24 완성).** `agent-worker`라는 별도 폴더는 안 만들고 `backend/scripts/`에 넣음(규모상 과함 판단).
+  - `backend/scripts/generate_weekly_report.py`: 이번 주(월~일) 팀원별 `todos`/`weekly_goals`/`portfolio_items`/`prep_items` 활동을 모아 Gemini로 팀원별 요약 생성 → 그 요약들을 모아 팀 전체 격려 요약 한 번 더 생성 → `weekly_reports`/`weekly_report_member_summaries`에 저장. 같은 주에 재실행하면 기존 리포트 지우고 재생성(테스트/재시도용). 활동이 0건인 팀원은 "활동 없음"을 사실대로 프롬프트에 넣어서 코칭 캐릭터 0/0 버그(함정 10번) 재발 방지.
+  - `backend/app/routers/weekly_report.py`: `GET /weekly-reports/latest` — 가장 최근 주 리포트 조회, 없으면 404.
+  - 프론트 `components/weekly-report-banner.tsx`: `feed` 페이지 최상단에 고정 표시. 리포트 없으면 아무것도 안 그림.
+  - `backend/scripts/run_weekly_report.bat` + Windows 작업 스케줄러(`StudyGroupWeeklyReport` 태스크, 매주 일요일 밤 11시)로 자동 실행 등록 완료. **단, PC가 그 시간에 켜져 있고 로그인돼 있어야 실행됨**(절전 중이면 안 돌아감 — "깨워서 실행" 옵션은 아직 안 켬). 실행 로그는 `backend/scripts/weekly_report.log`.
+  - **이건 "에이전트"가 아니라 "LLM 호출이 들어간 자동화 스크립트"임을 명확히 함(2026-07-24 논의)** — 무엇을 조회할지/언제 실행할지/결과를 어디 저장할지 전부 코드가 결정하고 Gemini는 텍스트 생성만 함. Function calling도, 자율 판단 루프도 없음. 코칭 캐릭터 1단계와 같은 급.
 - **참고 프로젝트**: `C:\Users\rlatn\Desktop\pusan-clone` — 카카오테크캠퍼스 "Kanana 일정 Agent" 수업 과제 레포. LangChain + Gradio + GPT계열 프록시라 직접 재사용은 안 되지만, **2단계(function calling)** 만들 때 tool 정의 방식 참고용으로 남겨둠.
 
 ## 백엔드 구조
@@ -68,7 +73,9 @@
 - `app/routers/weekly_goals.py`: `/weekly-goals`(GET/POST/PATCH/DELETE)
 - `app/routers/dashboard.py`: `/dashboard/streak`(그때그때 Todo에서 계산, `users.current_streak` 캐시 컬럼 안 씀), `/dashboard/activity-heatmap`, `/dashboard/team-progress`, `/dashboard/recent-portfolio-activity`
 - `app/routers/coaching.py`: `/coaching-messages`(GET/POST) — 위 "AI 에이전트" 섹션 참고
+- `app/routers/weekly_report.py`: `GET /weekly-reports/latest` — 위 "AI 에이전트" 섹션의 주간 리포트 참고
 - `scripts/clear_today_coaching.py`: 테스트용 — 오늘자 코칭 메시지 지우고 새 프롬프트로 재생성해보고 싶을 때 씀
+- `scripts/generate_weekly_report.py` / `scripts/run_weekly_report.bat`: 주간 리포트 생성 스크립트 + 스케줄러용 실행 래퍼(위 "AI 에이전트" 섹션 참고)
 
 ## 프론트엔드 구조
 - `app/page.tsx`: 비밀번호 입력(첫 화면)
@@ -80,8 +87,9 @@
 - `app/(app)/portfolio/page.tsx`: 완성. 상단에 프로필 카드(학교/전공/학점/재학상태/한줄소개/링크, 수정 가능) + 아래에 성과 항목 목록(자격증/프로젝트/경험/수상/기타, `@dnd-kit` 드래그 정렬, 각 항목에 링크 추가 가능)
 - **준비노트 → 포트폴리오 이관 완성됨**: `prep-notes` 페이지에서 항목이 `completed`면 "포트폴리오로 보내기" 폼(종류+달성일 선택)이 뜨고, 보내면 `source_prep_item_id`로 연결된 `portfolio_items`가 생성되면서 준비노트의 자료(`prep_resources`)가 포트폴리오 링크로 같이 복사됨. 이미 보낸 항목은 "포트폴리오에서 보기" 링크로 바뀜(중복 전송 방지).
 - `app/(app)/dashboard/page.tsx`: 완성. 스트릭/활동 히트맵, 팀 전체 오늘 완료율, 팀원 최근 포트폴리오 성과 위젯 — "여럿이 쓰는 느낌" 위해 일부러 넣음
-- `app/(app)/feed/page.tsx`: 완성 ("소식"으로 이름 바뀜). 글 작성/수정/삭제, 댓글, 이모지 반응, 15초 폴링(WebSocket 아님), 작성자 필터. **주간 리포트를 여기 맨 위에 고정 컴포넌트로 얹는 건 아직 미구현** (백엔드 `weekly_reports` 모델만 있고 라우터/생성 로직 없음)
+- `app/(app)/feed/page.tsx`: 완성 ("소식"으로 이름 바뀜). 글 작성/수정/삭제, 댓글, 이모지 반응, 15초 폴링(WebSocket 아님), 작성자 필터. **맨 위에 주간 리포트 고정 배너 추가됨(2026-07-24)** — `components/weekly-report-banner.tsx` 참고
 - `components/coaching-character.tsx`: AI 코칭 캐릭터. 화면 우측 하단, 이모지 placeholder, 클릭하면 대화 패널
+- `components/weekly-report-banner.tsx`: 주간 리포트 배너(2026-07-24 추가). `/weekly-reports/latest` 조회해서 팀원별 요약(이니셜 아바타 + 말풍선)을 먼저, 팀 전체 요약은 맨 아래에 🌱 이모지와 함께 톤 다운해서 표시. 리포트 없으면 렌더링 안 함. 스타일은 세밀한 반복 조정 거침(모서리 둥글기, 대비, 위/아래 크기 밸런스 등) — 팀원 3명 이상일 때 레이아웃은 아직 안 봄.
 - `lib/api.ts`: `apiFetch` 공용 fetch 래퍼(`credentials: include`, `ApiError` 클래스)
 - `lib/date.ts`: `toDateKey`, `getTodayKey`, `getEffectiveTodayKey`(새벽 5시 이전은 전날 취급), `getMonthGrid`, `chunkIntoWeeks`
 - `lib/useClickOutside.ts`: 빈 곳 클릭하면 열린 폼/패널 닫히는 공용 훅. Todo/캘린더/준비노트/프로필/코칭캐릭터 화면 전부에 적용해둠
@@ -98,24 +106,25 @@
 8. **Gemini API 모델명 `gemini-2.5-flash`가 404 에러.** 응답: `"This model models/gemini-2.5-flash is no longer available to new users."` — 신규 발급 키에는 막힌 구모델이었음. **해결:** `gemini-3.5-flash`로 교체.
 9. **PowerShell에서 `python -c "..."`에 큰따옴표/작은따옴표를 섞어 넣으면 인자가 깨짐 (`SyntaxError: unterminated string literal` 등).** Windows PowerShell이 네이티브 exe(`python.exe`)로 인자를 넘길 때 따옴표 escape가 기대한 대로 안 됨(여러 조합 다 시도했지만 계속 깨짐). **해결:** inline `-c` 대신 `.py` 스크립트 파일을 만들어서 `python scripts\파일명.py`로 실행. **교훈:** PowerShell + `python -c` + 따옴표 중첩 조합은 애초에 시도하지 말고 바로 스크립트 파일로 갈 것.
 10. **오늘 할일이 0개일 때 코칭 캐릭터가 "이미 다 완료했어요!"라고 말하는 버그.** 프롬프트에 "오늘 할일 0/0개 완료"라는 문구를 그대로 넣었더니 Gemini가 0/0을 100% 완료로 해석해서 생김. **해결:** `coaching.py`의 `_build_context_summary`에서 할일이 0개인 경우를 따로 분기해서 "오늘 등록된 할일이 아직 없음"으로 명시.
+11. **SQLAlchemy `relationship("클래스명")` 문자열 참조는, 그 클래스를 실제로 import하는 코드가 앱 어디에도 없으면 첫 쿼리 실행 시점에 `InvalidRequestError`로 터짐 (2026-07-24, 주간 리포트 라우터/스크립트 만들 때 두 번 겪음).** 모델 정의 시점엔 에러가 없다가, `db.query(...)`를 처음 호출하는 순간 SQLAlchemy가 전체 매퍼를 configure하면서 실패함 — 에러 메시지가 엉뚱한 곳(예: `get_current_user`)에서 나서 헷갈리기 쉬움. **해결:** 새 라우터/스크립트를 만들 때, 그 모델이 relationship으로 참조하는 다른 모델 클래스들(`PortfolioLink`, `WeeklyReportMemberSummary` 등)을 실제로 import해줄 것. **교훈:** FastAPI 서버는 `main.py`가 모든 라우터를 import하면서 관련 모델이 다 같이 로드되니 문제가 안 생기지만, 독립 실행 스크립트(`scripts/*.py`)는 필요한 모델만 import하기 쉬워서 특히 주의.
+12. **uvicorn `--reload`가 파일 변경은 감지(`WatchFiles detected changes... Reloading...`)하는데 실제로 워커 프로세스를 재시작 안 하고 멈춰있는 경우가 있음 (2026-07-24, Windows).** 로그에 `Reloading...`은 찍히는데 그 이후 `Started server process [PID]`가 다시 안 나옴 — 함정 6번과는 다른 증상(포트 중복 아님, reload 자체가 멈춤). **해결:** 그냥 프로세스 완전히 죽이고(`Stop-Process -Name python -Force`) 새로 켜는 게 제일 빠름. **교훈:** `--reload` 로그에 "감지함"이 찍혔다고 실제 반영됐다고 믿지 말고, 그 뒤에 `Started server process`가 다시 찍히는지까지 확인할 것.
+13. **PowerShell에서 괄호 든 경로(`app/(app)/feed/page.tsx`)를 `git add`할 때 bash 스타일 백슬래시 이스케이프(`\(app\)`)를 쓰면 `CommandNotFoundException`이 남 (2026-07-24).** PowerShell은 괄호를 통째로 다른 문법으로 파싱해서 백슬래시 이스케이프가 안 통함. **해결:** 경로 전체를 큰따옴표로 감쌀 것 — `"frontend/app/(app)/feed/page.tsx"`.
 
 ## 협업 방식 (지켜온 규칙)
 - 사용자는 데이터사이언스 전공, AI/백엔드 학습 중. **혼자 설계하고 코드를 던지지 말고, 제안 → 사용자 검토/결정 → 그 다음에 코드 작성** 순서로 진행해왔음.
 - 예외: **순수 보일러플레이트(설정, 재시작, 이미 합의된 CRUD 반복 패턴)는 바로 작성**해도 됨. **설계 결정(스키마 컬럼, 화면 구성, 기능 범위)은 먼저 제안하고 이유를 설명한 뒤, 사용자가 확정하면 코드로 옮기는** 식으로 계속 진행했음.
 - **터미널/git/gh 명령어는 내가 직접 실행하지 말고, 사용자에게 그대로 알려줘서 본인이 입력하게 할 것** (2026-07-23 추가). `gh auth status`처럼 읽기 전용인 것도 포함. 결과는 사용자가 붙여넣어 주는 식으로 확인.
+  - **예외 (2026-07-24 변경):** 사용자가 권한 설정을 조정해서 **개발 서버(uvicorn/next dev) 실행·재시작은 이제 내가 직접 함.** 서버 켜고 끄는 것, 포트 확인(`netstat`), 헬스체크(`curl`) 등은 직접 실행. **단, `git add`/`git commit`/`git push` 등 git 작업은 여전히 사용자가 직접 실행** — 명령어만 알려줄 것.
 - **구현은 하나씩 끊어서, 매 단계마다 뭐가 됐는지 명확히 요약하고 커밋 타이밍을 알려줄 것** (2026-07-23 추가). 파일 3~4개를 한번에 쭉 써버리고 나중에 한꺼번에 요약하지 말고, 한 기능 단위(예: 라우터 파일 하나, 컴포넌트 하나)마다 멈춰서 확인받을 것.
 - 화면/스타일 피드백은 세밀한 반복 조정으로 들어옴(색상 hex/oklch 값, 픽셀 단위 여백 등) — 정확한 값으로 빠르게 반영하는 걸 선호함.
 - 멀티테넌시("스터디방" — 여러 그룹이 한 서버 공유) 아이디어는 논의했지만 **지금은 안 하기로 결정**(서버 하나=그룹 하나, 재배포로 대응). 나중에 여유 있으면 검토.
-- **git 브랜치 전략 (2026-07-23 결정):** 지금까지(피드/대시보드/AI 코칭 캐릭터까지) 전부 `main`에 바로 커밋해왔음. 사용자가 뒤늦게 "브랜치 파서 merge 했어야 했다"고 판단 — 과거 커밋은 그대로 두고, **다음 기능부터는 `feature/<이름>` 브랜치 만들어서 작업하고 완료되면 main에 merge하는 방식으로 전환**. 다음 기능(주간 리포트) 시작할 때 바로 이 방식 적용할 것, 다시 물어볼 필요 없음.
+- **git 브랜치 전략 (2026-07-23 결정, 2026-07-24 처음 적용).** 지금까지(피드/대시보드/AI 코칭 캐릭터까지) 전부 `main`에 바로 커밋해왔음. 사용자가 뒤늦게 "브랜치 파서 merge 했어야 했다"고 판단 — 과거 커밋은 그대로 두고, **다음 기능부터는 `feature/<이름>` 브랜치 만들어서 작업하고 완료되면 main에 merge하는 방식으로 전환**. `feature/weekly-report`가 이 방식으로 진행한 첫 브랜치. `git push -u origin feature/weekly-report`로 원격에도 등록함(2026-07-24) — **아직 main에 merge/PR은 안 함**, 다음 세션에서 이어서 처리할 것.
 
-## 다음에 할 일 (우선순위 순, 사용자와 합의된 순서 — 2026-07-23 기준 갱신)
-1. **주간 리포트 생성 스크립트** — 다음 차례 (내일, 새 대화). **이제부터 `feature/weekly-report` 같은 브랜치 만들어서 작업.** `weekly_reports`/`weekly_report_member_summaries` 모델은 이미 있음 (`backend/app/models/weekly_report.py`, `weekly_report_member_summary.py`). 남은 일:
-   - `agent-worker`에 매주 일요일 밤 실행될 크론 스크립트 작성 (팀 전체 요약 + 개인별 요약, 코칭 톤/격려형으로 — Gemini 사용)
-   - 백엔드에 주간 리포트 조회 라우터 추가 (최신 리포트 가져오기)
-   - 프론트 `app/(app)/feed/page.tsx`에 주간 리포트를 맨 위 고정 컴포넌트로 얹기 (일반 `feed_posts`랑 다른 스타일)
+## 다음에 할 일 (우선순위 순, 사용자와 합의된 순서 — 2026-07-24 기준 갱신)
+1. **✅ 주간 리포트 (2026-07-24 완성).** 생성 스크립트/조회 라우터/프론트 배너/자동 실행 스케줄까지 다 됨(위 "AI 에이전트" 섹션 참고). **남은 건 `feature/weekly-report` → `main` merge(PR)뿐** — 브랜치는 이미 origin에 push해둠, 아직 merge 전.
 2. **AI 코칭 캐릭터 2단계** (function calling — 대화로 실제 Todo 추가 등 액션 실행) — 1단계(대화만)는 완성됨. 2단계는 나중에, `C:\Users\rlatn\Desktop\pusan-clone`(카카오테크캠퍼스 과제 레포)의 tool 정의 방식 참고.
-3. **⚠️ 프로필 삭제 로직이 최신 테이블들을 안 지움 (2026-07-23 발견, 아직 안 고침).** `auth.py`의 `delete_profile`이 DB cascade가 아니라 코드로 직접 관련 행을 지우는 방식인데, `calendar_events`/`calendar_event_participants`/`todos`/`todo_categories`만 정리하고 그 이후 추가된 `prep_items`(+checklist/resources), `portfolio_profiles`(+links/items), `feed_posts`(+comments/reactions), `weekly_goals`, `coaching_messages`는 전혀 안 지움. SQLite가 외래키 제약을 강제 안 해서(`PRAGMA foreign_keys` 설정 없음) 삭제 자체는 에러 없이 되지만, 삭제된 유저를 가리키는 고아 행이 남음. **특히 `feed.py`의 `_load_posts`가 `users_by_id[post.author_id]`로 작성자를 찾는데, 그 유저가 삭제된 상태면 KeyError로 소식 화면 전체가 깨질 수 있음(글쓴이 본인만이 아니라 모두).** 프로필 삭제 기능 실제로 쓰기 전에 고쳐야 함 — `delete_profile`에 나머지 테이블 정리 로직 추가.
+3. **⚠️ 프로필 삭제 로직이 최신 테이블들을 안 지움 (2026-07-23 발견, 아직 안 고침).** `auth.py`의 `delete_profile`이 DB cascade가 아니라 코드로 직접 관련 행을 지우는 방식인데, `calendar_events`/`calendar_event_participants`/`todos`/`todo_categories`만 정리하고 그 이후 추가된 `prep_items`(+checklist/resources), `portfolio_profiles`(+links/items), `feed_posts`(+comments/reactions), `weekly_goals`, `coaching_messages`, **`weekly_report_member_summaries`(2026-07-24 추가로 늘어난 대상)**는 전혀 안 지움. SQLite가 외래키 제약을 강제 안 해서(`PRAGMA foreign_keys` 설정 없음) 삭제 자체는 에러 없이 되지만, 삭제된 유저를 가리키는 고아 행이 남음. **특히 `feed.py`의 `_load_posts`가 `users_by_id[post.author_id]`로 작성자를 찾는데, 그 유저가 삭제된 상태면 KeyError로 소식 화면 전체가 깨질 수 있음(글쓴이 본인만이 아니라 모두). `weekly_report.py`의 `get_latest_weekly_report`도 같은 패턴(`users_by_id[summary.user_id]`)이라 동일하게 취약함.** 프로필 삭제 기능 실제로 쓰기 전에 고쳐야 함 — `delete_profile`에 나머지 테이블 정리 로직 추가.
 4. 남은 폴리시/인프라 작업들: 캘린더-Todo 연동(`show_as_todo` 실제 사용, 지금은 설계만 있고 미구현), 에러 표시 일관성 개선(네트워크/인증 실패 시 화면에 에러 안 뜨는 곳들 — Todo/캘린더 화면 등 대부분의 화면에 아직 없음, `error.tsx`/`loading.tsx` 라우트 파일도 전무), Alembic 마이그레이션 전환, Docker Compose/배포, `users.current_streak`/`longest_streak` 캐시 컬럼 정리(대시보드가 이미 실시간 계산 방식으로 바뀌어서 이 컬럼들이 지금 안 쓰임 — 없애거나 반대로 이 계산 결과로 채워 넣거나 결정 필요).
 
 ## 진행 방식 요청
-새 세션에서도 위 "협업 방식"을 유지해줘 — 주간 리포트 크론 스크립트부터 **`feature/weekly-report` 브랜치 만드는 것부터 시작**해서 "제안 → 검토 → 확정 → 코드" 순서로, 하나씩 끊어서 진행하면 됨.
+새 세션에서도 위 "협업 방식"을 유지해줘. 다음 시작할 일은 **`feature/weekly-report`를 `main`에 merge(PR)** 하는 것부터 — merge 후 다음 우선순위(코칭 캐릭터 2단계 또는 프로필 삭제 버그 수정) 중 사용자와 다시 확인하고 진행하면 됨. "제안 → 검토 → 확정 → 코드" 순서, 하나씩 끊어서 진행하는 방식은 계속 유지.
