@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { WeeklyReportBanner } from "@/components/weekly-report-banner";
 import { apiFetch } from "@/lib/api";
 import { useClickOutside } from "@/lib/useClickOutside";
 
@@ -341,6 +342,8 @@ export default function FeedPage() {
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6 pt-16">
       <h1 className="text-xl font-bold">소식</h1>
+
+      <WeeklyReportBanner />
 
       <div className="flex flex-wrap gap-2 border-b pb-3">
         <button
